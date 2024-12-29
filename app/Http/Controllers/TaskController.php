@@ -13,63 +13,81 @@ use Illuminate\Support\Facades\Validator;
 
 class TaskController extends Controller
 {
-   
+    
     public function index(Request $request)
     {
         try {
-            if (Auth::user()->role === 'admin') {
-                $tasks = Task::orderBy('id', 'desc');
+            $tasks = Task::orderBy('id', 'desc');
 
-                // Apply filters if provided in the request (optional)
-                if ($request->has('status')) {
-                    $tasks = $tasks->where('status', $request->status);
-                }
-
-                $tasks = $tasks->get();
-            } else {
-                // Regular user can only view their own tasks
-                $tasks = Task::where('user_id', Auth::id())->orderBy('id', 'desc')->get();
+            if (Auth::user()->role !== 'admin') {
+                $tasks = $tasks->where('user_id', Auth::id()); 
             }
 
-            // Return a simple response with tasks data
+            if ($request->has('status')) {
+                $tasks = $tasks->where('status', $request->status);
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Tasks fetched successfully',
-                'data' => $tasks
+                'data' => $tasks->get()
             ], 200);
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage(),
-                'data' => []
+                'message' => 'Error fetching tasks: ' . $e->getMessage(),
             ], 400);
         }
     }
 
-    // Store a new task in the database (Admin or User)
+    // public function index(Request $request)
+    // {
+    //     try {
+    //         // Start the query to fetch tasks, ordered by task id
+    //         $tasks = Task::orderBy('id', 'desc');
+
+    //         // If the user is not an admin, filter tasks for the logged-in user only
+    //         if (Auth::user()->role !== 'admin') {
+    //             $tasks = $tasks->where('user_id', Auth::id()); 
+    //         }
+
+    //         // Optionally, filter tasks by status if it's provided in the request
+    //         if ($request->has('status')) {
+    //             $tasks = $tasks->where('status', $request->status);
+    //         }
+
+    //         // Return the tasks to the admin or the regular user
+    //         return response()->json([
+    //             'success' => true,
+    //             'message' => 'Tasks fetched successfully',
+    //             'data' => $tasks->get()
+    //         ], 200);
+    //     } catch (Exception $e) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Error fetching tasks: ' . $e->getMessage(),
+    //         ], 400);
+    //     }
+    // }
+
+    // Store a new task
     public function store(Request $request)
     {
-        // Validation for the task fields
         $validation = Validator::make($request->all(), [
-            'title' => 'required|string|max:255',  // Title should not exceed 255 characters
-            'description' => 'required|string',    // Description is required
-            'due_date' => 'nullable|date|after:today', // Due date must be a valid date and in the future
+            'title' => 'required|string|max:255',
+            'description' => 'required|string',
+            'due_date' => 'nullable|date|after:today',
         ]);
 
         if ($validation->fails()) {
-            $error = $validation->errors()->first();
             return response()->json([
                 'success' => false,
-                'message' => $error,
-                'data' => []
+                'message' => $validation->errors()->first(),
             ], 400);
         }
 
         try {
-            // Only Admin can assign tasks to other users, Regular users can only create their own tasks
             $userId = Auth::user()->role === 'admin' ? $request->user_id : Auth::id();
-
-            // Create the task and associate it with the appropriate user
             $task = Task::create([
                 'title' => $request->title,
                 'description' => $request->description,
@@ -85,126 +103,61 @@ class TaskController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage(),
-                'data' => []
+                'message' => 'Error creating task: ' . $e->getMessage(),
             ], 400);
         }
     }
 
-    // Show a specific task (Only Admin can view any task, User can only view their own task)
+    // Show a specific task
     public function show(Task $task)
     {
-        // Check if the authenticated user is the owner of the task or an admin
         if ($task->user_id !== Auth::id() && Auth::user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized access',
-                'data' => []
-            ], 403);
+            return response()->json(['success' => false, 'message' => 'Unauthorized access'], 403);
         }
 
-        // Return task details
-        return response()->json([
-            'success' => true,
-            'message' => 'Task fetched successfully',
-            'data' => $task
-        ], 200);
+        return response()->json(['success' => true, 'data' => $task], 200);
     }
 
-    // Update a task in the database (Only Admin or the user who owns the task can update)
-    public function update(Request $request, Task $task)
+    // Update a task
+    public function update(Request $request, $task_id)
     {
-        try {
-            // Ensure the user is authenticated
-            if (!auth()->check()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized access. Please log in.',
-                    'data' => []
-                ], 401);
-            }
-    
-            // Log the user id and task owner id for debugging
-            Log::info('Authenticated User ID: ' . auth()->id());
-            Log::info('Task User ID: ' . $task->user_id);
-    
-            // Check if the authenticated user is the owner of the task or an admin
-            if ($task->user_id !== auth()->id() && auth()->user()->role !== 'admin') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized access',
-                    'data' => []
-                ], 403);
-            }
-    
-            // Validation for the task fields
-            $validation = Validator::make($request->all(), [
-                'title' => 'required|string|max:255',  // Title should not exceed 255 characters
-                'description' => 'required|string',    // Description is required
-                'due_date' => 'nullable|date|after:today', // Due date must be a valid date and in the future
-            ]);
-    
-            if ($validation->fails()) {
-                $error = $validation->errors()->first();
-                return response()->json([
-                    'success' => false,
-                    'message' => $error,
-                    'data' => []
-                ], 400);
-            }
-    
-            // Update the task
-            $task->update([
-                'title' => $request->title,
-                'description' => $request->description,
-                'due_date' => $request->due_date,
-            ]);
-    
-            // Return the updated task
-            return response()->json([
-                'success' => true,
-                'message' => 'Task updated successfully',
-                'data' => $task
-            ], 200);
-        } catch (Exception $e) {
-            // Log error for debugging purposes
-            Log::error('Error updating task: ' . $e->getMessage());
-    
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-                'data' => []
-            ], 400);
-        }
-    }
-    
-    // Delete a task (Only Admin or the user who owns the task can delete)
-    public function destroy(Task $task)
-    {
-        // Check if the authenticated user is the owner of the task or an admin
-        if ($task->user_id !== Auth::id() && Auth::user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized access',
-                'data' => []
-            ], 403);
+        $task = Task::find($task_id);
+
+        if (!$task) {
+            return response()->json(['success' => false, 'message' => 'Task not found'], 404);
         }
 
+        if ($task->user_id !== Auth::id() && Auth::user()->role !== 'admin') {
+            return response()->json(['success' => false, 'message' => 'Unauthorized access'], 403);
+        }
+
+        $validation = Validator::make($request->all(), [
+            'title' => 'required|string|max:255',
+            'description' => 'required|string',
+            'due_date' => 'nullable|date|after:today',
+            'status' => 'nullable|string|in:pending,completed,overdue',
+        ]);
+
+        if ($validation->fails()) {
+            return response()->json(['success' => false, 'message' => $validation->errors()->first()], 400);
+        }
+
+        $task->update($request->only(['title', 'description', 'due_date', 'status']));
+        return response()->json(['success' => true, 'message' => 'Task updated successfully', 'data' => $task], 200);
+    }
+
+    public function destroy($task_id)
+    {
         try {
-            // Delete the task
+            $task = Task::findOrFail($task_id);  
+            if ($task->user_id !== Auth::id() && Auth::user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Unauthorized access'], 403);
+            }
             $task->delete();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Task deleted successfully.',
-                'data' => []
-            ], 200);
+            return response()->json(['success' => true, 'message' => 'Task deleted successfully'], 200);
+            
         } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-                'data' => []
-            ], 400);
+            return response()->json(['success' => false, 'message' => 'Error deleting task: ' . $e->getMessage()], 400);
         }
     }
 }
