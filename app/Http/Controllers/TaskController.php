@@ -17,58 +17,27 @@ class TaskController extends Controller
     public function index(Request $request)
     {
         try {
-            $tasks = Task::orderBy('id', 'desc');
-
+            $tasks = Task::with(['user:id,name'])->orderBy('id', 'desc');
+            
             if (Auth::user()->role !== 'admin') {
-                $tasks = $tasks->where('user_id', Auth::id()); 
+                $tasks->where('user_id', Auth::id());
             }
-
+            if ($request->has('user_id')) {
+                if (Auth::user()->role !== 'admin' && Auth::id() !== $request->user_id) {
+                    return response()->json(['success' => false, 'message' => 'You can only view your own tasks.'], 403);
+                }
+                $tasks->where('user_id', $request->user_id);
+            }
+    
             if ($request->has('status')) {
-                $tasks = $tasks->where('status', $request->status);
+                $tasks->where('status', $request->status);
             }
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Tasks fetched successfully',
-                'data' => $tasks->get()
-            ], 200);
+    
+            return response()->json(['success' => true, 'message' => 'Tasks fetched successfully', 'data' => $tasks->get()], 200);
         } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error fetching tasks: ' . $e->getMessage(),
-            ], 400);
+            return response()->json(['success' => false, 'message' => 'Error fetching tasks: ' . $e->getMessage()], 400);
         }
     }
-
-    // public function index(Request $request)
-    // {
-    //     try {
-    //         // Start the query to fetch tasks, ordered by task id
-    //         $tasks = Task::orderBy('id', 'desc');
-
-    //         // If the user is not an admin, filter tasks for the logged-in user only
-    //         if (Auth::user()->role !== 'admin') {
-    //             $tasks = $tasks->where('user_id', Auth::id()); 
-    //         }
-
-    //         // Optionally, filter tasks by status if it's provided in the request
-    //         if ($request->has('status')) {
-    //             $tasks = $tasks->where('status', $request->status);
-    //         }
-
-    //         // Return the tasks to the admin or the regular user
-    //         return response()->json([
-    //             'success' => true,
-    //             'message' => 'Tasks fetched successfully',
-    //             'data' => $tasks->get()
-    //         ], 200);
-    //     } catch (Exception $e) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Error fetching tasks: ' . $e->getMessage(),
-    //         ], 400);
-    //     }
-    // }
 
     // Store a new task
     public function store(Request $request)
